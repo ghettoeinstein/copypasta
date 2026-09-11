@@ -23,13 +23,19 @@ class ClipEntry extends HiveObject {
   int typeIndex;
   bool pinned;
 
+  /// Manual drag-to-reorder position within its pinned/unpinned group.
+  /// Lower sorts first. Defaults to `createdAt` millis so existing/new
+  /// entries start in newest-first order until the user drags one.
+  double sortOrder;
+
   ClipEntry({
     required this.id,
     required this.text,
     required this.createdAt,
     required this.typeIndex,
     this.pinned = false,
-  });
+    double? sortOrder,
+  }) : sortOrder = sortOrder ?? -createdAt.millisecondsSinceEpoch.toDouble();
 
   ClipType get type => ClipType.values[typeIndex];
 }
@@ -44,19 +50,21 @@ class ClipEntryAdapter extends TypeAdapter<ClipEntry> {
     final fields = <int, dynamic>{
       for (var i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
+    final createdAt = fields[2] as DateTime;
     return ClipEntry(
       id: fields[0] as String,
       text: fields[1] as String,
-      createdAt: fields[2] as DateTime,
+      createdAt: createdAt,
       typeIndex: fields[3] as int,
       pinned: fields[4] as bool,
+      sortOrder: fields[5] as double? ?? -createdAt.millisecondsSinceEpoch.toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, ClipEntry obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -66,6 +74,8 @@ class ClipEntryAdapter extends TypeAdapter<ClipEntry> {
       ..writeByte(3)
       ..write(obj.typeIndex)
       ..writeByte(4)
-      ..write(obj.pinned);
+      ..write(obj.pinned)
+      ..writeByte(5)
+      ..write(obj.sortOrder);
   }
 }

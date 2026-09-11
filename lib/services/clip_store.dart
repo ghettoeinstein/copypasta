@@ -27,9 +27,28 @@ class ClipStore {
     final items = _box.values.toList();
     items.sort((a, b) {
       if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-      return b.createdAt.compareTo(a.createdAt);
+      return a.sortOrder.compareTo(b.sortOrder);
     });
     return items;
+  }
+
+  /// Applies a drag-to-reorder within the given (already-sorted) list of
+  /// visible entries: `from`/`to` are indices into that list. `sortOrder` is
+  /// mutated in memory immediately (so the very next `all()` call — e.g. the
+  /// widget rebuild that follows `setState` — already reflects the new
+  /// order), while the Hive write and keyboard sync happen in the
+  /// background. Only touches entries within the same pinned/unpinned group
+  /// as `visible`, so that grouping (handled in `all()`) is never disturbed.
+  void reorder(List<ClipEntry> visible, int from, int to) {
+    if (from == to) return;
+    final moved = visible[from];
+    final reordered = List<ClipEntry>.from(visible)
+      ..removeAt(from)
+      ..insert(to, moved);
+    for (var i = 0; i < reordered.length; i++) {
+      reordered[i].sortOrder = i.toDouble();
+    }
+    Future.wait(reordered.map((e) => e.save())).then((_) => KeyboardBridge.sync(all()));
   }
 
   Future<ClipEntry> add(String text) async {

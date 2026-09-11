@@ -33,12 +33,18 @@ class ClipCard extends StatelessWidget {
   final VoidCallback onTogglePin;
   final VoidCallback onStyle;
 
+  /// When set, shown as a drag handle that starts a reorder gesture — only
+  /// meaningful while the list is in its unfiltered, unsearched order (see
+  /// `HomeScreen._buildList`).
+  final Widget? dragHandle;
+
   const ClipCard({
     super.key,
     required this.entry,
     required this.onTap,
     required this.onTogglePin,
     required this.onStyle,
+    this.dragHandle,
   });
 
   @override
@@ -74,6 +80,7 @@ class ClipCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (dragHandle != null) ...[dragHandle!, const SizedBox(width: 6)],
                   SourceGlyph(initials: style.initials, tint: style.tint, background: style.glyphBg),
                   const SizedBox(width: 8),
                   Expanded(

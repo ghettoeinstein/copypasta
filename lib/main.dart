@@ -277,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  bool get _canReorder => _filter == _Filter.all && _query.trim().isEmpty;
+
   Widget _buildList() {
     final entries = _entries;
     if (entries.isEmpty) {
@@ -287,14 +289,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-      itemCount: entries.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final entry = entries[i];
-        return Dismissible(
-          key: ValueKey(entry.id),
+
+    Widget buildRow(int i) {
+      final entry = entries[i];
+      return Padding(
+        key: ValueKey(entry.id),
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Dismissible(
+          key: ValueKey('${entry.id}-dismiss'),
           background: Container(
             decoration: BoxDecoration(
               color: AppColors.danger.withValues(alpha: 0.15),
@@ -316,9 +318,63 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {});
             },
             onStyle: () => _openStyler(entry),
+            dragHandle: _canReorder
+                ? ReorderableDragStartListener(
+                    index: i,
+                    child: const Icon(Icons.drag_indicator, size: 18, color: AppColors.textPlaceholder),
+                  )
+                : null,
+          ),
+        ),
+      );
+    }
+
+    if (!_canReorder) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        itemCount: entries.length,
+        itemBuilder: (context, i) => buildRow(i),
+      );
+    }
+
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      itemCount: entries.length,
+      buildDefaultDragHandles: false,
+      proxyDecorator: _springyProxyDecorator,
+      onReorderItem: (oldIndex, newIndex) {
+        HapticFeedback.mediumImpact();
+        setState(() => ClipStore.instance.reorder(entries, oldIndex, newIndex));
+      },
+      itemBuilder: (context, i) => buildRow(i),
+    );
+  }
+
+  /// Gives the lifted card a big, springy "picked up" feel: it overshoots
+  /// past its final scale/tilt before settling, using an elastic curve
+  /// remapped onto Flutter's lift animation (0→1 on pick-up).
+  Widget _springyProxyDecorator(Widget child, int index, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, c) {
+        final t = Curves.elasticOut.transform(animation.value);
+        final scale = 1.0 + 0.06 * t;
+        final tilt = 0.02 * (1 - animation.value) * (index.isEven ? 1 : -1);
+        return Transform.rotate(
+          angle: tilt,
+          child: Transform.scale(
+            scale: scale,
+            child: Material(
+              color: Colors.transparent,
+              elevation: 12 * animation.value,
+              shadowColor: Colors.black87,
+              borderRadius: BorderRadius.circular(12),
+              child: c,
+            ),
           ),
         );
       },
+      child: child,
     );
   }
 
