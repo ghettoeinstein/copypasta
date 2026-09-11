@@ -32,6 +32,7 @@ class ClipCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
   final VoidCallback onStyle;
+  final VoidCallback? onSummarize;
 
   /// When set, shown as a drag handle that starts a reorder gesture — only
   /// meaningful while the list is in its unfiltered, unsearched order (see
@@ -44,6 +45,7 @@ class ClipCard extends StatelessWidget {
     required this.onTap,
     required this.onTogglePin,
     required this.onStyle,
+    this.onSummarize,
     this.dragHandle,
   });
 
@@ -103,6 +105,13 @@ class ClipCard extends StatelessWidget {
                     icon: const Icon(Icons.text_format, size: 18, color: AppColors.textSecondary),
                     onPressed: onStyle,
                   ),
+                  if (onSummarize != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'AI summarize (on-device)',
+                      icon: const Icon(Icons.auto_awesome, size: 18, color: AppColors.gold),
+                      onPressed: onSummarize,
+                    ),
                 ],
               ),
               const SizedBox(height: 8),

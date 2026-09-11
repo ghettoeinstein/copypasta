@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 
 import 'models/clip_entry.dart';
 import 'screens/sync_screen.dart';
+import 'services/apple_foundation_service.dart';
 import 'services/clip_store.dart';
+import 'services/foundation_model.g.dart' show FoundationModelAvailability;
 import 'services/settings_store.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -50,6 +52,39 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   _Filter _filter = _Filter.all;
   String _query = '';
+  bool _aiAvailable = false;
+  bool _aiSessionReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAi();
+  }
+
+  Future<void> _initAi() async {
+    final availability = await AppleFoundationService.checkAvailability();
+    if (!mounted) return;
+    setState(() => _aiAvailable = availability == FoundationModelAvailability.available);
+    if (!_aiAvailable) return;
+    final ready = await AppleFoundationService.initSession(
+      systemPrompt:
+          'You are a concise assistant inside a clipboard manager. '
+          'Summarize the given clipboard text in 5 words or fewer, '
+          'no punctuation at the end, no quotes around your answer.',
+    );
+    if (mounted) setState(() => _aiSessionReady = ready);
+  }
+
+  Future<void> _summarize(ClipEntry entry) async {
+    if (!_aiSessionReady) {
+      _toast('On-device model not ready');
+      return;
+    }
+    _toast('Summarizing on-device…');
+    final summary = await AppleFoundationService.generateResponse(entry.text);
+    if (!mounted) return;
+    _toast(summary ?? 'Could not summarize');
+  }
 
   static const _filterTypes = <_Filter, ClipType>{
     _Filter.url: ClipType.url,
@@ -318,6 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {});
             },
             onStyle: () => _openStyler(entry),
+            onSummarize: _aiAvailable ? () => _summarize(entry) : null,
             dragHandle: _canReorder
                 ? ReorderableDragStartListener(
                     index: i,

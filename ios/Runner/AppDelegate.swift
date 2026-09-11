@@ -33,5 +33,10 @@ import UIKit
       defaults.set(json, forKey: AppDelegate.clipsKey)
       result(nil)
     }
+
+    if #available(iOS 26.0, *),
+       let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FoundationModelHandler") {
+      FoundationModelHandler.register(with: registrar)
+    }
   }
 }
