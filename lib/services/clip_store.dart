@@ -62,4 +62,17 @@ class ClipStore {
     await _box.deleteAll(toDelete);
     await KeyboardBridge.sync(all());
   }
+
+  /// Drops unpinned clips older than two hours. Backs the "Auto-clear after
+  /// 2 hours" toggle on the Sync & Privacy screen.
+  Future<void> purgeOlderThanTwoHours() async {
+    final cutoff = DateTime.now().subtract(const Duration(hours: 2));
+    final toDelete = _box.values
+        .where((e) => !e.pinned && e.createdAt.isBefore(cutoff))
+        .map((e) => e.id)
+        .toList();
+    if (toDelete.isEmpty) return;
+    await _box.deleteAll(toDelete);
+    await KeyboardBridge.sync(all());
+  }
 }

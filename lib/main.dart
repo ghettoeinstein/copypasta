@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'models/clip_entry.dart';
+import 'screens/sync_screen.dart';
 import 'services/clip_store.dart';
+import 'services/settings_store.dart';
+import 'theme/app_colors.dart';
+import 'theme/app_theme.dart';
+import 'widgets/add_clip_sheet.dart';
+import 'widgets/clip_card.dart';
+import 'widgets/copy_pasta_logo.dart';
 import 'widgets/style_sheet.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ClipStore.instance.init();
+  await SettingsStore.instance.init();
+  if (SettingsStore.instance.autoClearAfterTwoHours) {
+    await ClipStore.instance.purgeOlderThanTwoHours();
+  }
   runApp(const CopyPastaApp());
 }
 
@@ -19,20 +30,15 @@ class CopyPastaApp extends StatelessWidget {
     return MaterialApp(
       title: 'CopyPasta',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF5B5FEF),
-        brightness: Brightness.light,
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF5B5FEF),
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      theme: AppTheme.dark,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
       home: const HomeScreen(),
     );
   }
 }
+
+enum _Filter { all, pinned, url, code, email, phone, styledText, plainText }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,32 +48,30 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  ClipType? _filter;
-  final _composeController = TextEditingController();
+  _Filter _filter = _Filter.all;
+  String _query = '';
+
+  static const _filterTypes = <_Filter, ClipType>{
+    _Filter.url: ClipType.url,
+    _Filter.code: ClipType.code,
+    _Filter.email: ClipType.email,
+    _Filter.phone: ClipType.phone,
+    _Filter.styledText: ClipType.styledText,
+    _Filter.plainText: ClipType.plainText,
+  };
 
   List<ClipEntry> get _entries {
-    final all = ClipStore.instance.all();
-    if (_filter == null) return all;
-    return all.where((e) => e.type == _filter).toList();
-  }
-
-  Future<void> _addFromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text?.trim();
-    if (text == null || text.isEmpty) {
-      _toast('Clipboard is empty');
-      return;
+    var items = ClipStore.instance.all();
+    if (_filter == _Filter.pinned) {
+      items = items.where((e) => e.pinned).toList();
+    } else if (_filterTypes.containsKey(_filter)) {
+      items = items.where((e) => e.type == _filterTypes[_filter]).toList();
     }
-    await ClipStore.instance.add(text);
-    setState(() {});
-  }
-
-  Future<void> _addFromCompose() async {
-    final text = _composeController.text.trim();
-    if (text.isEmpty) return;
-    await ClipStore.instance.add(text);
-    _composeController.clear();
-    setState(() {});
+    if (_query.trim().isNotEmpty) {
+      final q = _query.trim().toLowerCase();
+      items = items.where((e) => e.text.toLowerCase().contains(q)).toList();
+    }
+    return items;
   }
 
   void _toast(String message) {
@@ -79,10 +83,29 @@ class _HomeScreenState extends State<HomeScreen> {
     _toast('Copied');
   }
 
+  Future<void> _openAddSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddClipSheet(
+        onAdd: (text) async {
+          await ClipStore.instance.add(text);
+          if (mounted) setState(() {});
+        },
+        onReadClipboard: () async {
+          final data = await Clipboard.getData(Clipboard.kTextPlain);
+          return data?.text?.trim();
+        },
+      ),
+    );
+  }
+
   void _openStyler(ClipEntry entry) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => StyleSheet(
         source: entry.text,
         onUseStyled: (styled) async {
@@ -96,56 +119,114 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('CopyPasta'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.paste_outlined),
-            tooltip: 'Add from clipboard',
-            onPressed: _addFromClipboard,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            tooltip: 'Clear unpinned',
-            onPressed: () async {
-              await ClipStore.instance.clearUnpinned();
-              setState(() {});
-            },
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppColors.gold,
+        foregroundColor: AppColors.bg,
+        onPressed: _openAddSheet,
+        child: const Icon(Icons.add),
       ),
-      body: Column(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                _buildHeader(),
+                Expanded(child: _buildList()),
+              ],
+            ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 16,
+              child: IgnorePointer(child: _onDeviceBanner()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final entryCount = ClipStore.instance.all().length;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildComposeBar(),
+          Row(
+            children: [
+              const Expanded(child: CopyPastaWordmark()),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SyncScreen()),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(color: AppColors.gold, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('$entryCount CLIPS · LOCAL', style: AppTheme.mono.copyWith(fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined, color: AppColors.textSecondary),
+                tooltip: 'Clear unpinned',
+                onPressed: () async {
+                  await ClipStore.instance.clearUnpinned();
+                  setState(() {});
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildSearchBar(),
+          const SizedBox(height: 10),
           _buildFilterChips(),
-          Expanded(child: _buildList()),
         ],
       ),
     );
   }
 
-  Widget _buildComposeBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Row(
         children: [
+          const Icon(Icons.search, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 10),
           Expanded(
             child: TextField(
-              controller: _composeController,
-              decoration: const InputDecoration(
-                hintText: 'Type or paste text to save…',
-                border: OutlineInputBorder(),
+              onChanged: (v) => setState(() => _query = v),
+              style: AppTheme.mono.copyWith(fontSize: 13, color: AppColors.textPrimary),
+              cursorColor: AppColors.gold,
+              decoration: InputDecoration(
                 isDense: true,
+                border: InputBorder.none,
+                hintText: 'search clips, links, code…',
+                hintStyle: AppTheme.mono.copyWith(fontSize: 13, color: AppColors.textPlaceholder),
               ),
-              minLines: 1,
-              maxLines: 4,
-              onSubmitted: (_) => _addFromCompose(),
             ),
-          ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            icon: const Icon(Icons.add),
-            onPressed: _addFromCompose,
           ),
         ],
       ),
@@ -153,21 +234,43 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFilterChips() {
-    final types = <ClipType?>[null, ...ClipType.values];
+    final chips = <(_Filter, String)>[
+      (_Filter.all, 'All'),
+      (_Filter.pinned, 'Pinned'),
+      (_Filter.url, 'Links'),
+      (_Filter.code, 'Code'),
+      (_Filter.email, 'Email'),
+      (_Filter.phone, 'Phone'),
+      (_Filter.styledText, 'Styled'),
+      (_Filter.plainText, 'Text'),
+    ];
     return SizedBox(
-      height: 44,
+      height: 32,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: types.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemCount: chips.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
-          final type = types[i];
-          final selected = _filter == type;
-          return ChoiceChip(
-            label: Text(type == null ? 'All' : _typeLabel(type)),
-            selected: selected,
-            onSelected: (_) => setState(() => _filter = type),
+          final (filter, label) = chips[i];
+          final selected = _filter == filter;
+          return GestureDetector(
+            onTap: () => setState(() => _filter = filter),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.gold : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                border: selected ? null : Border.all(color: AppColors.borderStrong),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? AppColors.bg : AppColors.textSecondary,
+                ),
+              ),
+            ),
           );
         },
       ),
@@ -177,84 +280,74 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildList() {
     final entries = _entries;
     if (entries.isEmpty) {
-      return const Center(child: Text('No clips yet'));
+      return Center(
+        child: Text(
+          'No clips yet',
+          style: AppTheme.mono.copyWith(fontSize: 13, color: AppColors.textSecondary),
+        ),
+      );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
       itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
         final entry = entries[i];
         return Dismissible(
           key: ValueKey(entry.id),
-          background: Container(color: Colors.redAccent),
+          background: Container(
+            decoration: BoxDecoration(
+              color: AppColors.danger.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: const Icon(Icons.delete_outline, color: AppColors.danger),
+          ),
           onDismissed: (_) async {
             await ClipStore.instance.delete(entry.id);
             setState(() {});
           },
-          child: ListTile(
-            key: ValueKey('${entry.id}-tile'),
-            leading: Icon(_typeIcon(entry.type)),
-            title: Text(
-              entry.text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(_typeLabel(entry.type)),
+          child: ClipCard(
+            entry: entry,
             onTap: () => _copy(entry.text),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(entry.pinned ? Icons.push_pin : Icons.push_pin_outlined),
-                  onPressed: () async {
-                    await ClipStore.instance.togglePin(entry.id);
-                    setState(() {});
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.text_format),
-                  tooltip: 'Style text',
-                  onPressed: () => _openStyler(entry),
-                ),
-              ],
-            ),
+            onTogglePin: () async {
+              await ClipStore.instance.togglePin(entry.id);
+              setState(() {});
+            },
+            onStyle: () => _openStyler(entry),
           ),
         );
       },
     );
   }
 
-  String _typeLabel(ClipType type) {
-    switch (type) {
-      case ClipType.url:
-        return 'Link';
-      case ClipType.email:
-        return 'Email';
-      case ClipType.phone:
-        return 'Phone';
-      case ClipType.code:
-        return 'Code';
-      case ClipType.styledText:
-        return 'Styled';
-      case ClipType.plainText:
-        return 'Text';
-    }
-  }
-
-  IconData _typeIcon(ClipType type) {
-    switch (type) {
-      case ClipType.url:
-        return Icons.link;
-      case ClipType.email:
-        return Icons.email_outlined;
-      case ClipType.phone:
-        return Icons.phone_outlined;
-      case ClipType.code:
-        return Icons.code;
-      case ClipType.styledText:
-        return Icons.text_format;
-      case ClipType.plainText:
-        return Icons.notes;
-    }
+  Widget _onDeviceBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 30, offset: Offset(0, 8))],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(color: AppColors.gold, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'On-device model active — nothing leaves this phone',
+              style: AppTheme.mono.copyWith(fontSize: 11, color: AppColors.textPrimary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

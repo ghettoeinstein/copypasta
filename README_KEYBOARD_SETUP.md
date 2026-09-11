@@ -36,6 +36,47 @@ Flutter/CLI can't safely inject a new target into `Runner.xcodeproj`'s
    **CopyPasta** → tap it again → enable **Allow Full Access** (required to
    read/write the shared App Group storage used for the clip history).
 
+## Submission compliance checklist
+
+App icon (`assets/icon/app_icon.png`, from `copypasta.jpeg`) has been run
+through `flutter_launcher_icons` and is wired into both platforms:
+
+- **iOS**: full `AppIcon.appiconset` regenerated, including the 1024×1024
+  App Store icon with its alpha channel stripped (Apple rejects icons with
+  transparency).
+- **Android**: legacy `mipmap-*` icons plus a proper adaptive icon
+  (`ic_launcher_foreground`/`ic_launcher_background`, artwork scaled to 66%
+  so it isn't clipped by circular/squircle launcher masks).
+
+Re-run `dart run flutter_launcher_icons` any time you swap
+`assets/icon/app_icon.png` (or regenerate
+`assets/icon/app_icon_foreground.png` — see the Pillow snippet in git
+history — if you change the artwork's padding needs).
+
+Still required before you can actually submit:
+
+1. **Android release signing** (blocks Play Console upload — release builds
+   currently fall back to the debug key, which Google will reject):
+   ```bash
+   keytool -genkey -v -keystore ~/copypasta-upload-key.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias copypasta
+   ```
+   Then create `android/key.properties` (already gitignored) with:
+   ```properties
+   storePassword=<password you set above>
+   keyPassword=<password you set above>
+   keyAlias=copypasta
+   storeFile=/Users/you/copypasta-upload-key.jks
+   ```
+   `android/app/build.gradle.kts` picks this up automatically once the file
+   exists.
+2. **iOS**: Apple Developer Program enrollment + a distribution
+   certificate/provisioning profile in Xcode (Signing & Capabilities →
+   switch off "Automatically manage signing" only if you need a specific
+   profile for the keyboard extension's App Group entitlement).
+3. Store listing assets (screenshots, description, privacy policy URL) —
+   not something a build step can generate for you.
+
 ## How sync works
 
 - The Flutter app writes every clip to Hive locally (`ClipStore`) and, on

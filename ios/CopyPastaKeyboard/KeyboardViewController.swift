@@ -19,17 +19,19 @@ class KeyboardViewController: UIInputViewController {
     }
 
     private func setupUI() {
+        view.backgroundColor = KeyboardTheme.background
+
         let container = UIStackView()
         container.axis = .vertical
-        container.spacing = 6
+        container.spacing = 10
         container.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(container)
 
         NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            container.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            container.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            container.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -44),
         ])
 
         container.addArrangedSubview(buildStyleRow())
@@ -39,19 +41,34 @@ class KeyboardViewController: UIInputViewController {
 
         // "Next Keyboard" is required by Apple for any custom keyboard so
         // the user can switch back to the system keyboard.
-        let nextKeyboardButton = UIButton(type: .system)
-        nextKeyboardButton.setTitle("🌐", for: [])
+        let nextKeyboardButton = chipButton(title: "🌐", tint: KeyboardTheme.textSecondary, background: KeyboardTheme.chip)
         nextKeyboardButton.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
         nextKeyboardButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(nextKeyboardButton)
         NSLayoutConstraint.activate([
-            nextKeyboardButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            nextKeyboardButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
+            nextKeyboardButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            nextKeyboardButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
         ])
+    }
+
+    /// A rounded, filled chip matching the suggestion pills in the design
+    /// (Keyboard.dc.html) — system `UIButton`s default to plain text with
+    /// no background, which read as invisible on the dark extension.
+    private func chipButton(title: String, tint: UIColor, background: UIColor) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.baseForegroundColor = tint
+        configuration.background.backgroundColor = background
+        configuration.background.cornerRadius = KeyboardTheme.chipCornerRadius
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 13, bottom: 8, trailing: 13)
+        let button = UIButton(configuration: configuration)
+        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        return button
     }
 
     private func buildStyleRow() -> UIScrollView {
         let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
         let row = UIStackView()
         row.axis = .horizontal
         row.spacing = 8
@@ -65,8 +82,7 @@ class KeyboardViewController: UIInputViewController {
             row.heightAnchor.constraint(equalTo: scroll.heightAnchor),
         ])
         for style in FancyStyle.allCases {
-            let button = UIButton(type: .system)
-            button.setTitle(style.label, for: [])
+            let button = chipButton(title: style.label, tint: KeyboardTheme.gold, background: KeyboardTheme.chipAccent)
             button.tag = FancyStyle.allCases.firstIndex(of: style) ?? 0
             button.addAction(UIAction { [weak self] _ in self?.applyStyleToSelection(style) }, for: .touchUpInside)
             row.addArrangedSubview(button)
@@ -79,9 +95,8 @@ class KeyboardViewController: UIInputViewController {
         scroll.axis = .horizontal
         scroll.spacing = 8
         for clip in readClips().prefix(20) {
-            let button = UIButton(type: .system)
             let short = clip.count > 24 ? String(clip.prefix(24)) + "…" : clip
-            button.setTitle(short, for: [])
+            let button = chipButton(title: short, tint: KeyboardTheme.textPrimary, background: KeyboardTheme.chip)
             button.addAction(UIAction { [weak self] _ in self?.textDocumentProxy.insertText(clip) }, for: .touchUpInside)
             scroll.addArrangedSubview(button)
         }

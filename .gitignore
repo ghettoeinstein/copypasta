@@ -10,3 +10,6 @@ ios/Flutter/Flutter.podspec
 .idea/
 *.iml
 .DS_Store
+android/key.properties
+*.jks
+*.keystore
